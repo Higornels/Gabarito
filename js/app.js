@@ -462,9 +462,9 @@
     return { canvas: c, res: OMR.analyze(d.data, c.width, c.height, cfg) };
   }
 
-  // Algum bloco ficou faltando entre os encontrados (posições com buraco)?
-  function temLacuna(res) {
-    if (!res.ok) return true;
+  // Algum bloco ficou faltando (menos que o total da prova, ou buraco entre os encontrados)?
+  function temLacuna(res, total) {
+    if (!res.ok || res.blocks.length < total) return true;
     var ncols = 0;
     res.blocks.forEach(function (b) { ncols = Math.max(ncols, b.col + 1); });
     var span = 0;
@@ -478,7 +478,7 @@
   // numa foto da folha inteira).
   function lerFoto(file, p) {
     busy(true, 'Lendo a folha…');
-    var cfg = { alternativas: p.alternativas, questoesPorBloco: p.questoesPorBloco };
+    var cfg = { alternativas: p.alternativas, questoesPorBloco: p.questoesPorBloco, blocos: p.blocos };
     var carregada;
     return esperarTela().then(function () { return carregarImagem(file); }).then(function (r) {
       carregada = r;
@@ -499,7 +499,7 @@
       });
       var maior = Math.min(2600, Math.max(r.img.naturalWidth, r.img.naturalHeight));
       return passos.then(function (atual) {
-        if (!temLacuna(atual.res) || maior <= MAX_PX * 1.25) return atual;
+        if (!temLacuna(atual.res, p.blocos) || maior <= MAX_PX * 1.25) return atual;
         busy(true, 'Relendo com mais detalhe…');
         return esperarTela().then(function () {
           var alt = analisar(r.img, atual.rot, maior, cfg);

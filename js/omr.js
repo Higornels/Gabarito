@@ -483,6 +483,9 @@
 
   // Quanto a grade parece um bloco de questões: anéis nítidos em todas as posições e, em
   // cada linha, no máximo uma bolinha escura (um cabeçalho escuro parece uma linha cheia).
+  // Uma marcação que se destaca das outras também conta: nas linhas brancas da zebra os
+  // anéis saem fracos, e sem isso a grade desce uma linha (perde a 1ª questão e pega o
+  // papel em branco abaixo do bloco, que não tem marcação nenhuma).
   function blockQuality(H, nAlt, nRows, fillAt, ringAt) {
     var quality = 0, r = latticeRadius(H, nAlt, nRows);
     for (var q = 0; q < nRows; q++) {
@@ -493,7 +496,8 @@
         ring += ringAt(p[0], p[1], r);
       }
       f.sort(function (a, b) { return a - b; });
-      quality += ring / nAlt - 5 * Math.max(0, f[0] - 0.4);
+      var mark = f[nAlt - 1] - f[(nAlt - 1) >> 1];
+      quality += ring / nAlt - 5 * Math.max(0, f[0] - 0.4) + 0.5 * Math.max(0, mark);
     }
     return quality;
   }
@@ -592,15 +596,46 @@
     { blurs: 1, k: 0.12, scales: [0.8, 0.9, 1, 1.2] }
   ];
 
+  // Cada tratamento pode achar blocos diferentes (um acha só o bloco 4, outro acha os
+  // demais): junta tudo e só para antes quando já tem todos os blocos esperados.
   function analyze(rgba, w, h, cfg) {
-    var g0 = toGray(rgba, w, h), res;
+    var g0 = toGray(rgba, w, h), nAlt = cfg.alternativas, nRows = cfg.questoesPorBloco;
+    var blocks = [], rejected = 0, semRaio = true;
     for (var i = 0; i < PREPS.length; i++) {
       var gray = g0;
       for (var b = 0; b < PREPS[i].blurs; b++) gray = blur3(gray, w, h);
-      res = analyzeGray(gray, w, h, cfg, PREPS[i]);
-      if (res.ok) return res;
+      var res = analyzeGray(gray, w, h, cfg, PREPS[i]);
+      if (!res.semRaio) semRaio = false;
+      rejected += res.rejected;
+      res.blocks.forEach(function (bl) { juntar(blocks, bl); });
+      if (blocks.length && (!cfg.blocos || blocks.length >= cfg.blocos)) break;
     }
-    return res;
+    if (!blocks.length) {
+      return {
+        ok: false, blocks: [],
+        error: semRaio ? 'Não encontrei bolinhas preenchidas na foto.'
+          : rejected
+          ? 'Encontrei blocos de questões, mas nenhum completo. Enquadre o bloco inteiro na foto.'
+          : 'Não encontrei blocos com ' + nAlt + ' alternativas e ' + nRows + ' questões. Confira a configuração da prova.'
+      };
+    }
+    posicionar(blocks);
+    var orient = 0;
+    blocks.forEach(function (bl) { orient += bl.orient; });
+    return { ok: true, blocks: blocks, orient: orient / blocks.length };
+  }
+
+  // Áreas sobrepostas = mesmo bloco (talvez deslocado): fica a leitura de maior qualidade.
+  function juntar(blocks, b) {
+    for (var i = 0; i < blocks.length; i++) {
+      var o = blocks[i];
+      if (Math.abs(o.cx - b.cx) < (o.bw + b.bw) / 2 && Math.abs(o.cy - b.cy) < (o.bh + b.bh) / 2) {
+        if (o.quality >= b.quality) return;
+        blocks.splice(i, 1);
+        break;
+      }
+    }
+    blocks.push(b);
   }
 
   function analyzeGray(gray, w, h, cfg, prep) {
@@ -609,7 +644,7 @@
     var win = Math.max(15, Math.round(maxDim / 12)) | 1;
     var bin = binarize(gray, w, h, win, prep.k);
     var radii = estimateRadius(distanceTransform(bin, w, h), w, h);
-    if (!radii.length) return { ok: false, error: 'Não encontrei bolinhas preenchidas na foto.', blocks: [] };
+    if (!radii.length) return { blocks: [], rejected: 0, semRaio: true };
     // Testa os raios mais prováveis (o aluno costuma pintar por dentro do anel impresso,
     // então o anel pode ser um pouco maior — ou borrar para fora, e o anel ser menor) e
     // junta os blocos achados em todas as tentativas; quando o mesmo bloco aparece mais
@@ -628,30 +663,11 @@
         b.cx = c[0]; b.cy = c[1];
         b.bw = Math.hypot.apply(null, sub(project(b.H, nAlt - 0.5, (nRows - 1) / 2), project(b.H, -0.5, (nRows - 1) / 2)));
         b.bh = Math.hypot.apply(null, sub(project(b.H, (nAlt - 1) / 2, nRows - 0.5), project(b.H, (nAlt - 1) / 2, -0.5)));
-        for (var i = 0; i < blocks.length; i++) {
-          var o = blocks[i];
-          // áreas sobrepostas = mesmo bloco (talvez deslocado)
-          if (Math.abs(o.cx - b.cx) < (o.bw + b.bw) / 2 && Math.abs(o.cy - b.cy) < (o.bh + b.bh) / 2) {
-            if (o.quality >= b.quality) return;
-            blocks.splice(i, 1);
-            break;
-          }
-        }
-        blocks.push(b);
+        b.orient = orientation(bin, w, h, b.H, nAlt, nRows);
+        juntar(blocks, b);
       });
     });
-    if (!blocks.length) {
-      return {
-        ok: false, blocks: [],
-        error: rejected
-          ? 'Encontrei blocos de questões, mas nenhum completo. Enquadre o bloco inteiro na foto.'
-          : 'Não encontrei blocos com ' + nAlt + ' alternativas e ' + nRows + ' questões. Confira a configuração da prova.'
-      };
-    }
-    posicionar(blocks);
-    var orient = 0;
-    blocks.forEach(function (b) { orient += orientation(bin, w, h, b.H, nAlt, nRows); });
-    return { ok: true, blocks: blocks, orient: orient / blocks.length };
+    return { blocks: blocks, rejected: rejected };
   }
 
   // Positivo = cartão em pé. Num bloco em pé os números das questões ficam à esquerda da
