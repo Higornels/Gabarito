@@ -17,6 +17,9 @@ salvos nele (nada é enviado para servidor).
    tire duas: o app junta os blocos. Confira as questões em amarelo e salve.
 4. **Resultados**: notas, acertos por bloco, análise por questão e exportação para planilha (CSV).
 
+**Prova padrão para todos:** na tela da prova, toque em **Copiar como prova padrão do app** e
+cole o texto dentro da lista em `js/padrao.js`. Depois de publicar, quem abrir o app já recebe essa prova.
+
 Sem cartão-resposta próprio? Na tela da prova, use **Imprimir cartão-resposta em branco**.
 
 ### Dicas de foto

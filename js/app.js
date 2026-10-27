@@ -14,6 +14,7 @@
 
   var state = load();
   var ui = { tab: 'provas', editando: null, folha: null, foto: null };
+  if (incluirPadrao()) save();
 
   function load() {
     try {
@@ -25,6 +26,35 @@
       }
     } catch (e) { /* armazenamento indisponível: começa vazio */ }
     return { provas: [], resultados: {}, alunos: [], ativa: null };
+  }
+
+  // Acrescenta as provas de js/padrao.js que este aparelho ainda não recebeu.
+  // Guarda os ids já recebidos para que uma prova excluída não volte.
+  function incluirPadrao() {
+    var vistas = state.padraoVisto = state.padraoVisto || [];
+    var novas = (window.PROVAS_PADRAO || []).filter(function (p) {
+      return p && p.id && vistas.indexOf(p.id) < 0;
+    });
+    novas.forEach(function (p) {
+      vistas.push(p.id);
+      if (state.provas.some(function (x) { return x.id === p.id; })) return;
+      p = JSON.parse(JSON.stringify(p));
+      p.gabarito = ajustar(p.gabarito, total(p), '');
+      state.provas.push(p);
+    });
+    if (!state.ativa && state.provas.length) state.ativa = state.provas[0].id;
+    return novas.length > 0;
+  }
+
+  // Texto da prova para colar em js/padrao.js.
+  function copiarComoPadrao(p) {
+    var txt = JSON.stringify(p, null, 2) + ',';
+    function falhou() { prompt('Copie o texto abaixo e cole em js/padrao.js:', txt); }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(txt).then(function () {
+        toast('Copiado! Cole dentro da lista em js/padrao.js.');
+      }, falhou);
+    } else falhou();
   }
 
   function save() {
@@ -331,6 +361,7 @@
     html += '<div class="stack">' +
       '<button class="btn primary big" data-act="salvar-prova">Salvar prova</button>' +
       '<button class="btn big" data-act="imprimir">🖨️ Imprimir cartão-resposta em branco</button>' +
+      '<button class="btn big" data-act="copiar-padrao">📌 Copiar como prova padrão do app</button>' +
       (existe ? '<button class="btn danger big" data-act="excluir-prova">Excluir prova</button>' : '') +
       '</div>';
     view.innerHTML = html;
@@ -945,6 +976,7 @@
     else if (act === 'gab-foto') { lerCamposProva(); gabFoto = true; document.getElementById('file-camera').click(); }
     else if (act === 'salvar-prova') salvarProva();
     else if (act === 'imprimir') { lerCamposProva(); imprimir(ui.editando); }
+    else if (act === 'copiar-padrao') { lerCamposProva(); copiarComoPadrao(ui.editando); }
     else if (act === 'excluir-prova') {
       if (!confirm('Excluir a prova "' + ui.editando.nome + '" e todas as correções dela?')) return;
       state.provas = state.provas.filter(function (x) { return x.id !== ui.editando.id; });
